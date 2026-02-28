@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HSC VLMS - Portal</title>
+    <style>
+        :root { 
+            --nav-blue: #003366; 
+            --success-green: #27ae60; 
+            --bg-gray: #f4f7f9;
+            --white: #ffffff;
+            --hsc-accent: #0056b3;
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; background: var(--bg-gray); display: flex; flex-direction: column; height: 100vh; 
+        }
+
+        .sidebar { 
+            width: 100%; background: var(--nav-blue); color: white; padding: 12px; 
+            display: flex; overflow-x: auto; gap: 10px; position: sticky; top: 0; z-index: 1000; box-sizing: border-box;
+        }
+
+        .sidebar h2 { font-size: 1.1rem; margin: 0; align-self: center; white-space: nowrap; font-weight: 700; }
+
+        .btn-nav { 
+            padding: 10px 16px; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; 
+            font-size: 13px; background: rgba(255,255,255,0.1); color: white; font-weight: 600; white-space: nowrap; cursor: pointer;
+        }
+
+        .btn-sync { background: var(--success-green); border: none; }
+
+        .main { padding: 15px; flex-grow: 1; overflow-y: auto; }
+        
+        .hsc-card { 
+            background: var(--white); border-radius: 12px; padding: 20px; margin-bottom: 15px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-left: 5px solid var(--nav-blue);
+        }
+
+        .final-banner {
+            background: var(--nav-blue); color: white; padding: 25px; border-radius: 12px;
+            text-align: center; margin-bottom: 25px;
+        }
+
+        .attachment-link {
+            display: block; padding: 12px; margin-bottom: 8px;
+            background: #f1f3f4; border-radius: 6px; text-decoration: none; color: #3c4043;
+            font-size: 13px; font-weight: 500; border: 1px solid #dadce0;
+        }
+
+        .btn-turn-in {
+            display: block; width: 100%; background: var(--nav-blue); color: white; padding: 16px; 
+            text-align: center; text-decoration: none; border-radius: 8px; font-weight: 700; margin-top: 15px;
+        }
+
+        @media (min-width: 768px) {
+            body { flex-direction: row; }
+            .sidebar { width: 220px; flex-direction: column; height: 100vh; position: fixed; padding: 30px 20px; }
+            .main { margin-left: 220px; padding: 40px; }
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar">
+        <h2>HSC VLMS</h2>
+        <button class="btn-nav btn-sync" onclick="handleAuthClick()">🔄 Sync Google</button>
+        <button class="btn-nav" onclick="showSection('work')">FACS 1 Work</button>
+        <button class="btn-nav" onclick="showSection('grades')">Grades</button>
+    </nav>
+
+    <main class="main">
+        <div id="status-text" style="margin-bottom:15px; color:#d93025; font-weight:bold;">Status: Not Synced</div>
+        
+        <section id="section-work">
+            <h1>FACS 1 Assignments</h1>
+            <div id="work-list">Please sync to load assignments.</div>
+        </section>
+
+        <section id="section-grades" style="display:none;">
+            <h1>Final Course Grades</h1>
+            <div id="grades-list">Please sync to load grades.</div>
+        </section>
+    </main>
+
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
+
+    <script>
+        const CLIENT_ID = '1042342028327-pliq405qso25f01br911ksqhn8f3jkgk.apps.googleusercontent.com';
+        const API_KEY = 'AIzaSyC1pl8M0jb_Os4eODhnuKmzKqQC4Ommxi4';
+        
+        let tokenClient;
+        let allCourses = [];
+
+        // 1. Initialize API and Auth Client
+        async function initApp() {
+            await gapi.client.init({ apiKey: API_KEY, discoveryDocs: ["https://classroom.googleapis.com/$discovery/rest?version=v1"] });
+            
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: 'https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.me https://www.googleapis.com/auth/classroom.student-submissions.me.readonly',
+                callback: async (resp) => {
+                    if (resp.access_token) {
+                        document.getElementById('status-text').innerText = "Status: Syncing...";
+                        document.getElementById('status-text').style.color = "orange";
+                        await fetchInitialData();
+                    }
+                },
+            });
+            document.getElementById('status-text').innerText = "Status: Ready to Sync";
+            document.getElementById('status-text').style.color = "blue";
+        }
+
+        window.onload = () => { gapi.load('client', initApp); };
+
+        function handleAuthClick() {
+            tokenClient.requestAccessToken({prompt: 'consent'});
+        }
+
+        async function fetchInitialData() {
+            try {
+                const response = await gapi.client.classroom.courses.list();
+                allCourses = response.result.courses || [];
+                document.getElementById('status-text').innerText = "Status: Connected ✅";
+                document.getElementById('status-text').style.color = "green";
+                loadFACSWork(); // Auto-load FACS after sync
+            } catch (err) {
+                document.getElementById('status-text').innerText = "Status: Sync Error";
+            }
+        }
+
+        // --- FACS 1 WORK LOGIC ---
+        async function loadFACSWork() {
+            showSection('work');
+            const list = document.getElementById('work-list');
+            const course = allCourses.find(c => c.name.toUpperCase().includes("FACS 1"));
+            
+            if (!course) {
+                list.innerHTML = "Course 'FACS 1' not found. Ensure you are enrolled.";
+                return;
+            }
+
+            try {
+                const [workR, subR] = await Promise.all([
+                    gapi.client.classroom.courses.courseWork.list({ courseId: course.id }),
+                    gapi.client.classroom.courses.courseWork.studentSubmissions.list({ courseId: course.id, courseWorkId: "-" })
+                ]);
+
+                const now = new Date();
+                const assignments = workR.result.courseWork || [];
+                const subs = subR.result.studentSubmissions || [];
+
+                const filtered = assignments.filter(a => {
+                    const s = subs.find(sub => sub.courseWorkId === a.id);
+                    if (s && (s.state === 'TURNED_IN' || s.state === 'RETURNED')) return false;
+                    if (a.dueDate) {
+                        const due = new Date(a.dueDate.year, a.dueDate.month - 1, a.dueDate.day, a.dueTime?.hours || 23);
+                        if (due < now) return false;
+                    }
+                    return true;
+                });
+
+                list.innerHTML = filtered.map(a => `
+                    <div class="hsc-card">
+                        <div style="font-size:18px; font-weight:700; color:var(--nav-blue);">${a.title}</div>
+                        <div style="font-size:14px; margin:10px 0; color:#444;">${a.description || 'No instructions.'}</div>
+                        ${renderMaterials(a.materials)}
+                        <a href="${a.alternateLink}" target="_blank" class="btn-turn-in">Turn In</a>
+                    </div>
+                `).join('') || "No active work in FACS 1.";
+            } catch (e) { list.innerHTML = "Error loading assignments."; }
+        }
+
+        function renderMaterials(m) {
+            if (!m) return '';
+            return m.map(item => {
+                if (item.link) return `<a class="attachment-link" href="${item.link.url}" target="_blank">🔗 ${item.link.title || 'Link'}</a>`;
+                if (item.driveFile) return `<a class="attachment-link" href="${item.driveFile.driveFile.alternateLink}" target="_blank">📄 ${item.driveFile.driveFile.title}</a>`;
+                return '';
+            }).join('');
+        }
+
+        // --- GRADES LOGIC ---
+        async function showGrades() {
+            showSection('grades');
+            const list = document.getElementById('grades-list');
+            if (allCourses.length === 0) return;
+
+            list.innerHTML = "Calculating scores...";
+            try {
+                let html = "";
+                for (let course of allCourses) {
+                    const resp = await gapi.client.classroom.courses.courseWork.studentSubmissions.list({ courseId: course.id, courseWorkId: "-" });
+                    const graded = (resp.result.studentSubmissions || []).filter(s => s.assignedGrade);
+                    
+                    if (graded.length > 0) {
+                        let earned = 0, possible = 0, inner = "";
+                        for (let s of graded) {
+                            const cw = await gapi.client.classroom.courses.courseWork.get({ courseId: course.id, id: s.courseWorkId });
+                            const score = parseFloat(s.assignedGrade);
+                            const max = parseFloat(cw.result.maxPoints) || 100;
+                            earned += score; possible += max;
+                            inner += `<div class="hsc-card" style="display:flex; justify-content:space-between;">
+                                <span>${cw.result.title} (${score}/${max})</span>
+                                <strong>${Math.round((score/max)*100)}%</strong>
+                            </div>`;
+                        }
+                        html += `<h2>${course.name}</h2>
+                                <div class="final-banner">
+                                    <div style="font-size:36px; font-weight:800;">${Math.round((earned/possible)*100)}%</div>
+                                    <div>FINAL GRADE</div>
+                                </div>${inner}`;
+                    }
+                }
+                list.innerHTML = html || "No grades found.";
+            } catch (e) { list.innerHTML = "Error loading grades."; }
+        }
+
+        function showSection(id) {
+            document.getElementById('section-work').style.display = id === 'work' ? 'block' : 'none';
+            document.getElementById('section-grades').style.display = id === 'grades' ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>
