@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HSC VLMS - Mobile Portal</title>
+    <style>
+        :root { --nav-blue: #003366; --success-green: #27ae60; --warning-yellow: #ffc107; }
+        body { font-family: -apple-system, sans-serif; margin: 0; background: #f4f4f4; display: flex; flex-direction: column; height: 100vh; }
+
+        .sidebar { width: 100%; background: var(--nav-blue); color: white; padding: 15px; display: flex; overflow-x: auto; gap: 10px; position: sticky; top: 0; z-index: 1000; box-sizing: border-box; }
+        .sidebar h2 { font-size: 1rem; margin: 0; align-self: center; white-space: nowrap; }
+        .sidebar button { padding: 8px 12px; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; white-space: nowrap; cursor: pointer; }
+        
+        .btn-sync { background: var(--success-green); color: white; }
+        .btn-nav { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.3); }
+
+        .main { padding: 15px; flex-grow: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .status-bar { padding: 10px; border-radius: 8px; font-weight: bold; text-align: center; margin-bottom: 15px; background: var(--warning-yellow); font-size: 13px; }
+        
+        .course-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+        .course-item { padding: 18px; background: white; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-left: 6px solid var(--nav-blue); }
+
+        #assignment-view { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:white; z-index:2000; padding:20px; overflow-y:auto; }
+        .assignment-card { border: 1px solid #ddd; padding: 15px; border-radius: 12px; margin-bottom: 15px; background: #fff; }
+        .description-text { font-size: 14px; color: #444; margin: 12px 0; white-space: pre-wrap; word-wrap: break-word; }
+        .description-text a { color: #0066cc; text-decoration: underline; }
+        
+        .material-link { display: block; background: #f0f4f8; padding: 12px; margin-top: 8px; border-radius: 8px; color: #003366; text-decoration: none; font-size: 13px; border: 1px solid #d0dbe5; font-weight: bold; }
+        .btn-turnin { background: var(--nav-blue); color: white; padding: 14px; border: none; border-radius: 8px; width: 100%; margin-top: 10px; font-weight: bold; cursor: pointer; }
+        
+        .overlay-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .close-btn { padding: 8px 15px; cursor: pointer; background: #eee; border-radius: 5px; font-weight: bold; }
+        .refresh-btn { padding: 8px 15px; cursor: pointer; background: var(--nav-blue); color: white; border-radius: 5px; font-weight: bold; border: none; }
+
+        @media (min-width: 768px) {
+            body { flex-direction: row; }
+            .sidebar { width: 220px; flex-direction: column; height: 100vh; position: fixed; }
+            .main { margin-left: 220px; padding: 40px; }
+            .course-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+            #assignment-view { left: 220px; padding: 40px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <h2>HSC VLMS</h2>
+        <button class="btn-sync" onclick="handleAuthClick()">Sync</button>
+        <button class="btn-nav" onclick="showSection('classes')">Classes</button>
+        <button class="btn-nav" onclick="showSection('roster')">Roster</button>
+        <button class="btn-nav" onclick="window.location.href='index.html'">Log Out</button>
+    </div>
+
+    <div class="main">
+        <div id="conn-status" class="status-bar">Initializing Google API...</div>
+        <div id="section-classes">
+            <h1 style="font-size: 1.5rem;">My Courses</h1>
+            <div id="courses-list" class="course-grid">
+                <p style="color: #888;">Connect Google to see pending assignments.</p>
+            </div>
+        </div>
+        <div id="section-roster" style="display:none;">
+            <h1>Manual Roster</h1>
+            <input type="text" id="newStudent" placeholder="Student Name" style="width:60%; padding:10px;">
+            <button onclick="addStudent()" style="padding:10px;">Add</button>
+            <div id="roster-list" style="margin-top:20px;"></div>
+        </div>
+    </div>
+
+    <div id="assignment-view">
+        <div class="overlay-header">
+            <button class="refresh-btn" id="refresh-trigger">🔄 Refresh</button>
+            <span class="close-btn" onclick="closeAssignments()">✕ Close</span>
+        </div>
+        <h2 id="selected-course-title">Pending Work</h2>
+        <hr>
+        <div id="work-list"></div>
+    </div>
+
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
+
+    <script>
+        const CLIENT_ID = '1042342028327-pliq405qso25f01br911ksqhn8f3jkgk.apps.googleusercontent.com';
+        const API_KEY = 'AIzaSyC1pl8M0jb_Os4eODhnuKmzKqQC4Ommxi4';
+        
+        let tokenClient;
+        let currentCourseId = null;
+        let currentCourseName = null;
+
+        function linkify(text) {
+            if (!text) return '';
+            const urlPattern = /(\b(https?):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
+            return text.replace(urlPattern, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+        }
+
+        function renderMaterials(materials) {
+            if (!materials) return '';
+            return materials.map(m => {
+                if (m.link) return `<a class="material-link" href="${m.link.url}" target="_blank">🔗 ${m.link.title || 'Link'}</a>`;
+                if (m.youtubeVideo) return `<a class="material-link" href="${m.youtubeVideo.alternateLink}" target="_blank">📺 Video: ${m.youtubeVideo.title}</a>`;
+                if (m.driveFile) return `<a class="material-link" href="${m.driveFile.driveFile.alternateLink}" target="_blank">📄 File: ${m.driveFile.driveFile.title}</a>`;
+                return '';
+            }).join('');
+        }
+
+        async function initializeGapiClient() {
+            try {
+                await gapi.client.init({ apiKey: API_KEY, discoveryDocs: ["https://classroom.googleapis.com/$discovery/rest?version=v1"] });
+                const status = document.getElementById('conn-status');
+                status.innerText = "Google API: Ready";
+                status.style.background = "#27ae60"; status.style.color = "white";
+            } catch (err) { console.error(err); }
+        }
+
+        window.onload = function() {
+            gapi.load('client', initializeGapiClient);
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: 'https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.me https://www.googleapis.com/auth/classroom.student-submissions.me.readonly',
+                callback: async (resp) => { if (resp.access_token) await listCourses(); },
+            });
+            document.getElementById('refresh-trigger').onclick = () => viewWork(currentCourseId, currentCourseName);
+        };
+
+        function handleAuthClick() { tokenClient.requestAccessToken({prompt: 'consent'}); }
+
+        async function listCourses() {
+            const response = await gapi.client.classroom.courses.list();
+            const courses = response.result.courses || [];
+            document.getElementById('courses-list').innerHTML = courses.map(c => `
+                <div class="course-item" onclick="viewWork('${c.id}', '${c.name.replace(/'/g, "\\'")}')">
+                    <strong>${c.name}</strong><br><small>View pending work</small>
+                </div>
+            `).join('');
+            document.getElementById('conn-status').innerText = "Sync Complete";
+        }
+
+        async function viewWork(courseId, courseName) {
+            currentCourseId = courseId;
+            currentCourseName = courseName;
+            document.getElementById('selected-course-title').innerText = courseName;
+            document.getElementById('assignment-view').style.display = 'block';
+            const workList = document.getElementById('work-list');
+            workList.innerHTML = "Updating task list...";
+
+            try {
+                const workResp = await gapi.client.classroom.courses.courseWork.list({ courseId: courseId });
+                const assignments = workResp.result.courseWork || [];
+
+                const subResp = await gapi.client.classroom.courses.courseWork.studentSubmissions.list({ courseId: courseId, courseWorkId: "-" });
+                const submissions = subResp.result.studentSubmissions || [];
+
+                const pending = assignments.filter(a => {
+                    const sub = submissions.find(s => s.courseWorkId === a.id);
+                    return !(sub && (sub.state === 'TURNED_IN' || sub.state === 'RETURNED'));
+                });
+
+                if (pending.length === 0) {
+                    workList.innerHTML = "<div style='text-align:center; padding:40px;'>🎉 All assignments completed!</div>";
+                    return;
+                }
+
+                workList.innerHTML = pending.map(a => `
+                    <div class="assignment-card">
+                        <h3>${a.title}</h3>
+                        <div class="description-text">${linkify(a.description)}</div>
+                        <div>${renderMaterials(a.materials)}</div>
+                        <button class="btn-turnin" onclick="window.open('${a.alternateLink}', '_blank')">Open & Turn In</button>
+                    </div>
+                `).join('');
+            } catch (e) { workList.innerHTML = "Error loading work."; }
+        }
+
+        function showSection(id) {
+            document.getElementById('section-classes').style.display = id === 'classes' ? 'block' : 'none';
+            document.getElementById('section-roster').style.display = id === 'roster' ? 'block' : 'none';
+            closeAssignments();
+        }
+
+        function closeAssignments() { document.getElementById('assignment-view').style.display = 'none'; }
+        function addStudent() {
+            const name = document.getElementById('newStudent').value;
+            if(!name) return;
+            document.getElementById('roster-list').innerHTML += `<div style="padding:10px; border-bottom:1px solid #ddd;">${name}</div>`;
+            document.getElementById('newStudent').value = "";
+        }
+    </script>
+</body>
+</html>
