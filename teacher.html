@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HSC VLMS - Portal</title>
+    <style>
+        :root { 
+            --nav-blue: #003366; 
+            --success-green: #27ae60; 
+            --warning-orange: #f39c12;
+            --danger-red: #e74c3c;
+            --bg-gray: #f4f7f9;
+            --white: #ffffff;
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; background: var(--bg-gray); display: flex; flex-direction: column; height: 100vh; 
+        }
+
+        .sidebar { 
+            width: 100%; background: var(--nav-blue); color: white; padding: 12px; 
+            display: flex; overflow-x: auto; gap: 10px; position: sticky; top: 0; z-index: 1000; box-sizing: border-box;
+        }
+
+        .btn-nav { 
+            padding: 10px 16px; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; 
+            font-size: 13px; background: rgba(255,255,255,0.1); color: white; font-weight: 600; white-space: nowrap; cursor: pointer;
+        }
+
+        .main { padding: 15px; flex-grow: 1; overflow-y: auto; }
+        
+        /* Final Grade Summary Card */
+        .final-grade-banner {
+            background: var(--nav-blue);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 12px rgba(0,51,102,0.2);
+        }
+
+        .final-label { font-size: 14px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; }
+        .final-percent { font-size: 32px; font-weight: 800; }
+
+        /* Individual Grade Card */
+        .grade-card {
+            background: var(--white); border-radius: 12px; padding: 15px; margin-bottom: 10px;
+            display: flex; justify-content: space-between; align-items: center;
+            border-left: 5px solid #ddd;
+        }
+
+        .grade-title { font-weight: 600; font-size: 15px; }
+        .grade-score { font-size: 18px; font-weight: 700; color: var(--nav-blue); }
+
+        .score-good { border-left-color: var(--success-green); }
+        .score-average { border-left-color: var(--warning-orange); }
+        .score-poor { border-left-color: var(--danger-red); }
+
+        @media (min-width: 768px) {
+            body { flex-direction: row; }
+            .sidebar { width: 220px; flex-direction: column; height: 100vh; position: fixed; padding: 30px 20px; }
+            .main { margin-left: 220px; padding: 40px; }
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar">
+        <h2 style="font-size:1.1rem; margin:0; align-self:center;">HSC VLMS</h2>
+        <button class="btn-nav" style="background:var(--success-green); border:none;" onclick="handleAuthClick()">🔄 Sync</button>
+        <button class="btn-nav" onclick="goToFACS1()">Work (FACS 1)</button>
+        <button class="btn-nav" onclick="showGrades()">Grades</button>
+    </nav>
+
+    <main class="main">
+        <div id="status-text" style="font-size:12px; color:#666; margin-bottom:10px;">Status: Awaiting Sync</div>
+        
+        <section id="section-work" style="display:none;">
+            <h1 id="course-name-display">FACS 1</h1>
+            <div id="work-list"></div>
+        </section>
+
+        <section id="section-grades" style="display:none;">
+            <h1>Final Grades</h1>
+            <div id="grades-list"></div>
+        </section>
+    </main>
+
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
+
+    <script>
+        const CLIENT_ID = '1042342028327-pliq405qso25f01br911ksqhn8f3jkgk.apps.googleusercontent.com';
+        const API_KEY = 'AIzaSyC1pl8M0jb_Os4eODhnuKmzKqQC4Ommxi4';
+        
+        let tokenClient;
+        let allCourses = [];
+
+        async function initGapi() {
+            await gapi.client.init({ apiKey: API_KEY, discoveryDocs: ["https://classroom.googleapis.com/$discovery/rest?version=v1"] });
+        }
+
+        window.onload = () => {
+            gapi.load('client', initGapi);
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: 'https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.me https://www.googleapis.com/auth/classroom.student-submissions.me.readonly',
+                callback: async (resp) => { if (resp.access_token) fetchInitialData(); },
+            });
+        };
+
+        function handleAuthClick() { tokenClient.requestAccessToken({prompt: 'consent'}); }
+
+        async function fetchInitialData() {
+            document.getElementById('status-text').innerText = "Syncing...";
+            const response = await gapi.client.classroom.courses.list();
+            allCourses = response.result.courses || [];
+            document.getElementById('status-text').innerText = "Connected ✅";
+            showGrades(); 
+        }
+
+        async function showGrades() {
+            const list = document.getElementById('grades-list');
+            document.getElementById('section-work').style.display = 'none';
+            document.getElementById('section-grades').style.display = 'block';
+            list.innerHTML = "<p>Calculating Final Averages...</p>";
+            
+            try {
+                let html = "";
+                for (let course of allCourses) {
+                    const resp = await gapi.client.classroom.courses.courseWork.studentSubmissions.list({ courseId: course.id, courseWorkId: "-" });
+                    const graded = (resp.result.studentSubmissions || []).filter(s => s.assignedGrade);
+                    
+                    if (graded.length > 0) {
+                        let totalEarned = 0;
+                        let totalPossible = 0;
+                        let assignmentHtml = "";
+
+                        for (let s of graded) {
+                            const cw = await gapi.client.classroom.courses.courseWork.get({ courseId: course.id, id: s.courseWorkId });
+                            const score = parseFloat(s.assignedGrade);
+                            const max = parseFloat(cw.result.maxPoints) || 100;
+                            const pct = (score / max) * 100;
+                            
+                            totalEarned += score;
+                            totalPossible += max;
+
+                            let colorClass = pct >= 90 ? 'score-good' : (pct >= 70 ? 'score-average' : 'score-poor');
+
+                            assignmentHtml += `
+                                <div class="grade-card ${colorClass}">
+                                    <div class="grade-title">${cw.result.title}</div>
+                                    <div class="grade-score">${Math.round(pct)}%</div>
+                                </div>`;
+                        }
+
+                        const finalPct = Math.round((totalEarned / totalPossible) * 100);
+
+                        html += `
+                            <div class="course-section">
+                                <h2 style="color:var(--nav-blue); margin-top:30px;">${course.name}</h2>
+                                <div class="final-grade-banner">
+                                    <div class="final-label">Overall Course Grade</div>
+                                    <div class="final-percent">${finalPct}%</div>
+                                </div>
+                                ${assignmentHtml}
+                            </div>`;
+                    }
+                }
+                list.innerHTML = html || "<p>No graded work found.</p>";
+            } catch (e) { list.innerHTML = "Error syncing grades."; }
+        }
+
+        function goToFACS1() {
+            document.getElementById('section-grades').style.display = 'none';
+            document.getElementById('section-work').style.display = 'block';
+            // (Existing FACS 1 loading logic from previous turn)
+        }
+    </script>
+</body>
+</html>
