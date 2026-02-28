@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HSC VLMS - Login</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #001a33; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-card { background: white; padding: 40px; border-radius: 10px; width: 320px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        h1 { color: #003366; margin-bottom: 20px; font-size: 24px; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #003366; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        #error { color: red; font-size: 13px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1>HSC VLMS</h1>
+        <input type="text" id="username" placeholder="Username">
+        <input type="password" id="password" placeholder="Password">
+        <button onclick="validate()">Login</button>
+        <p id="error"></p>
+    </div>
+
+    <script>
+        function validate() {
+            const u = document.getElementById('username').value;
+            const p = document.getElementById('password').value;
+            const err = document.getElementById('error');
+
+            if (u === "admin" && p === "2132012kkKK") {
+                // Using relative path for GitHub Pages
+                window.location.href = "teacher.html";
+            } else {
+                err.innerText = "Invalid Admin Credentials";
+            }
+        }
+    </script>
+</body>
+</html>
