@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin-allow-popups">
+    <title>HSC VLMS - Mobile Portal</title>
+    <style>
+        :root { 
+            --nav-blue: #003366; --success-green: #27ae60; --warning-yellow: #f1c40f; 
+            --error-red: #e74c3c; --bg-gray: #f8f9fa; --card-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background: var(--bg-gray); color: #333; height: 100vh; display: flex; flex-direction: column; }
+        .sidebar { background: var(--nav-blue); color: white; padding: 12px; display: flex; gap: 10px; overflow-x: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .sidebar h2 { font-size: 1rem; margin: 0; padding-right: 10px; border-right: 1px solid rgba(255,255,255,0.3); align-self: center; white-space: nowrap; }
+        .btn-sync { background: var(--success-green); color: white; padding: 10px 15px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; }
+        .btn-nav { background: rgba(255,255,255,0.15); color: white; padding: 10px 15px; border-radius: 8px; border: none; cursor: pointer; }
+        .main { flex: 1; padding: 15px; overflow-y: auto; }
+        
+        .assignment-card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: var(--card-shadow); border-left: 6px solid var(--nav-blue); position: relative; }
+        
+        /* Grade Badges */
+        .grade-badge { 
+            position: absolute; top: 15px; right: 15px; padding: 5px 10px; 
+            border-radius: 6px; font-weight: bold; color: white; font-size: 0.9rem; 
+        }
+        .grade-high { background: var(--success-green); }
+        .grade-mid { background: var(--warning-yellow); color: #333; }
+        .grade-low { background: var(--error-red); }
+
+        .final-grade-container {
+            background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;
+            text-align: center; border: 2px solid var(--nav-blue);
+        }
+
+        .btn-material { 
+            display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; 
+            margin: 8px 0; border-radius: 10px; border: 1px solid #e1e7f0; 
+            background: #fdfdfd; color: var(--nav-blue); font-weight: 600; 
+            text-decoration: none; font-size: 14px;
+        }
+        .btn-open { background: var(--nav-blue); color: white; width: 100%; padding: 15px; border-radius: 10px; border: none; font-weight: bold; margin-top: 10px; cursor: pointer; }
+
+        #assignment-overlay { display: none; position: fixed; inset: 0; background: white; z-index: 2000; padding: 20px; overflow-y: auto; }
+        .course-item { background: white; padding: 20px; border-radius: 12px; margin-bottom: 12px; display: flex; justify-content: space-between; font-weight: bold; box-shadow: var(--card-shadow); cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<nav class="sidebar">
+    <h2>HSC Portal</h2>
+    <button id="sync-btn" class="btn-sync" onclick="handleAuth()">🔄 Sync</button>
+    <button class="btn-nav" onclick="showView('classes')">📂 Work</button>
+</nav>
+
+<main class="main" id="content-area">
+    <div id="status" style="background:var(--warning-yellow); padding:10px; border-radius:8px; text-align:center; font-weight:bold;">Tap Sync to load grades.</div>
+    <div id="course-list" style="margin-top:20px;"></div>
+</main>
+
+<div id="assignment-overlay">
+    <div style="display:flex; justify-content:space-between; margin-bottom:10px; align-items: center;">
+        <button onclick="document.getElementById('assignment-overlay').style.display='none'" class="btn-nav" style="background:#eee; color:#333;">✕ Close</button>
+        <h2 id="current-course-name" style="margin:0; font-size: 1.1rem;"></h2>
+    </div>
+    <div id="final-grade-box"></div>
+    <hr>
+    <div id="work-list"></div>
+</div>
+
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://accounts.google.com/gsi/client"></script>
+
+<script>
+    const CLIENT_ID = '1042342028327-pliq405qso25f01br911ksqhn8f3jkgk.apps.googleusercontent.com';
+    const API_KEY = 'AIzaSyC1pl8M0jb_Os4eODhnuKmzKqQC4Ommxi4';
+    let tokenClient;
+
+    function gapiStart() {
+        gapi.client.init({ apiKey: API_KEY, discoveryDocs: ["https://classroom.googleapis.com/$discovery/rest?version=v1"] });
+    }
+
+    function gsiStart() {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.me https://www.googleapis.com/auth/classroom.student-submissions.me.readonly',
+            callback: (token) => { if(token.access_token) loadCourses(); }
+        });
+    }
+
+    window.onload = () => { gapi.load('client', gapiStart); gsiStart(); };
+    function handleAuth() { tokenClient.requestAccessToken({prompt: 'consent'}); }
+
+    function getGradeColorClass(percent) {
+        if (percent >= 70) return 'grade-high';
+        if (percent >= 60) return 'grade-mid';
+        return 'grade-low';
+    }
+
+    function getMaterialHTML(m) {
+        let url = "", title = "", icon = "📄";
+        if (m.driveFile) { url = m.driveFile.alternateLink; title = m.driveFile.title; icon = "📁"; }
+        else if (m.link) { url = m.link.url; title = m.link.title || "Link"; icon = "🌐"; }
+        if (!url) return "";
+        return `<a href="${url}" target="_blank" class="btn-material"><span>${icon}</span> ${title}</a>`;
+    }
+
+    async function loadCourses() {
+        const resp = await gapi.client.classroom.courses.list();
+        document.getElementById('course-list').innerHTML = (resp.result.courses || []).map(c => `
+            <div class="course-item" onclick="viewWork('${c.id}', '${c.name.replace(/'/g, "\\'")}')">
+                ${c.name} <span>›</span>
+            </div>`).join('');
+        document.getElementById('status').style.display = 'none';
+    }
+
+    async function viewWork(id, name) {
+        document.getElementById('current-course-name').innerText = name;
+        document.getElementById('assignment-overlay').style.display = 'block';
+        const list = document.getElementById('work-list');
+        const finalBox = document.getElementById('final-grade-box');
+        list.innerHTML = "Calculating grades...";
+
+        try {
+            const [w, s] = await Promise.all([
+                gapi.client.classroom.courses.courseWork.list({ courseId: id }),
+                gapi.client.classroom.courses.courseWork.studentSubmissions.list({ courseId: id, courseWorkId: "-" })
+            ]);
+
+            const assignments = w.result.courseWork || [];
+            const subs = s.result.studentSubmissions || [];
+            
+            let totalEarned = 0, totalPossible = 0;
+
+            const html = assignments.map(a => {
+                const sub = subs.find(x => x.courseWorkId === a.id);
+                const score = sub?.assignedGrade || 0;
+                const possible = a.maxPoints || 0;
+                const percent = possible > 0 ? Math.round((score / possible) * 100) : 0;
+                
+                // Track for final grade if graded
+                if (sub?.assignedGrade !== undefined) {
+                    totalEarned += score;
+                    totalPossible += possible;
+                }
+
+                return `
+                <div class="assignment-card">
+                    <div class="grade-badge ${getGradeColorClass(percent)}">
+                        ${score}/${possible} (${percent}%)
+                    </div>
+                    <h3>${a.title}</h3>
+                    <div class="materials">${(a.materials || []).map(m => getMaterialHTML(m)).join('')}</div>
+                    <button class="btn-open" onclick="window.open('${a.alternateLink}', '_blank')">🚀 Open Assignment</button>
+                </div>`;
+            }).join('');
+
+            const finalPercent = totalPossible > 0 ? Math.round((totalEarned / totalPossible) * 100) : 0;
+            finalBox.innerHTML = `
+                <div class="final-grade-container">
+                    <div style="font-size: 0.9rem; color: #666;">FINAL COURSE GRADE</div>
+                    <div style="font-size: 2.5rem; font-weight: 800; color: var(--nav-blue);">${finalPercent}%</div>
+                    <div style="display:inline-block; padding: 4px 12px; border-radius: 20px; color: white; margin-top: 5px;" class="${getGradeColorClass(finalPercent)}">
+                        Status: ${finalPercent >= 60 ? 'Passing' : 'Failing'}
+                    </div>
+                </div>`;
+
+            list.innerHTML = html || "No assignments found.";
+        } catch (e) {
+            list.innerHTML = "Error loading grades.";
+        }
+    }
+
+    function showView(v) { document.getElementById('assignment-overlay').style.display = 'none'; }
+</script>
+</body>
+</html>
