@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin-allow-popups">
+    <title>HSC VLMS - Mobile Portal</title>
+    <style>
+        :root { 
+            --nav-blue: #003366; --success-green: #27ae60; --warning-yellow: #f1c40f; 
+            --error-red: #e74c3c; --bg-gray: #f8f9fa; --card-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background: var(--bg-gray); color: #333; height: 100vh; display: flex; flex-direction: column; }
+        
+        .sidebar { background: var(--nav-blue); color: white; padding: 12px; display: flex; gap: 10px; overflow-x: auto; position: sticky; top: 0; z-index: 1000; }
+        .sidebar h2 { font-size: 1rem; margin: 0; padding-right: 10px; border-right: 1px solid rgba(255,255,255,0.3); align-self: center; white-space: nowrap; }
+        .btn-sync { background: var(--success-green); color: white; padding: 10px 15px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer; }
+        .btn-nav { background: rgba(255,255,255,0.15); color: white; padding: 10px 15px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; }
+        .active-tab { background: white !important; color: var(--nav-blue) !important; }
+
+        .main { flex: 1; padding: 15px; overflow-y: auto; }
+        .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 15px; box-shadow: var(--card-shadow); border-left: 6px solid var(--nav-blue); position: relative; }
+        
+        .grade-pill { float: right; padding: 4px 10px; border-radius: 20px; color: white; font-weight: bold; font-size: 0.8rem; }
+        .passing { background: var(--success-green); }
+        .warning { background: var(--warning-yellow); color: #333; }
+        .failing { background: var(--error-red); }
+
+        .btn-material { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #ddd; text-decoration: none; color: #333; font-size: 14px; background: #fafafa; font-weight: 600; }
+        .btn-open { background: var(--nav-blue); color: white; width: 100%; padding: 16px; border-radius: 10px; border: none; font-weight: 800; font-size: 1rem; margin-top: 10px; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 8px; }
+
+        #course-overlay { display: none; position: fixed; inset: 0; background: white; z-index: 2000; padding: 20px; overflow-y: auto; }
+        .course-item { background: white; padding: 20px; border-radius: 12px; margin-bottom: 12px; display: flex; justify-content: space-between; font-weight: bold; box-shadow: var(--card-shadow); cursor: pointer; }
+        .summary-box { background: var(--nav-blue); color: white; padding: 25px; border-radius: 15px; text-align: center; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+<nav class="sidebar">
+    <h2>HSC Portal</h2>
+    <button id="sync-btn" class="btn-sync" onclick="handleAuth()">🔄 Sync</button>
+    <button id="tab-work" class="btn-nav active-tab" onclick="switchTab('work')">📂 Assignments</button>
+    <button id="tab-grades" class="btn-nav" onclick="switchTab('grades')">📊 Grades</button>
+</nav>
+
+<main class="main" id="content-area">
+    <div id="status-msg" style="text-align:center; padding:20px; font-weight:bold; background: var(--warning-yellow); border-radius: 8px;">Tap Sync to load your Portal.</div>
+    <div id="course-list" style="margin-top:20px;"></div>
+</main>
+
+<div id="course-overlay">
+    <div style="display:flex; justify-content:space-between; margin-bottom:15px; align-items: center;">
+        <button onclick="closeOverlay()" class="btn-nav" style="background:#eee; color:#333;">✕ Back</button>
+        <h2 id="overlay-title" style="margin:0; font-size: 1.1rem; color: var(--nav-blue);"></h2>
+    </div>
+    <div id="overlay-content"></div>
+</div>
+
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://accounts.google.com/gsi/client"></script>
+
+<script>
+    const CLIENT_ID = '1042342028327-pliq405qso25f01br911ksqhn8f3jkgk.apps.googleusercontent.com';
+    const API_KEY = 'AIzaSyC1pl8M0jb_Os4eODhnuKmzKqQC4Ommxi4';
+    let tokenClient, currentTab = 'work', allCourses = [];
+
+    function gapiStart() { gapi.client.init({ apiKey: API_KEY, discoveryDocs: ["https://classroom.googleapis.com/$discovery/rest?version=v1"] }); }
+    function gsiStart() {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: CLIENT_ID,
+            scope: 'https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.me https://www.googleapis.com/auth/classroom.student-submissions.me.readonly',
+            callback: (token) => { if(token.access_token) { document.getElementById('status-msg').style.display='none'; loadDashboard(); } }
+        });
+    }
+    window.onload = () => { gapi.load('client', gapiStart); gsiStart(); };
+    function handleAuth() { tokenClient.requestAccessToken({prompt: 'consent'}); }
+
+    function switchTab(tab) {
+        currentTab = tab;
+        document.getElementById('tab-work').classList.toggle('active-tab', tab === 'work');
+        document.getElementById('tab-grades').classList.toggle('active-tab', tab === 'grades');
+        document.getElementById('course-overlay').style.display = 'none';
+        renderCourseList();
+    }
+
+    async function loadDashboard() {
+        const resp = await gapi.client.classroom.courses.list();
+        allCourses = resp.result.courses || [];
+        renderCourseList();
+    }
+
+    function renderCourseList() {
+        const list = document.getElementById('course-list');
+        list.innerHTML = allCourses.map(c => `
+            <div class="course-item" onclick="openCourse('${c.id}', '${c.name.replace(/'/g, "\\'")}')">
+                ${c.name} <span>›</span>
+            </div>`).join('');
+    }
+
+    function getMaterialHTML(m) {
+        let url = "", title = "", icon = "🔗";
+        if (m.driveFile) {
+            url = m.driveFile.alternateLink;
+            title = m.driveFile.title || "Drive File";
+            icon = (title.toLowerCase().includes("video")) ? "🎬" : "📄";
+            if (icon === "🎬") {
+                const id = url.match(/\/d\/([^\/]+)/)?.[1];
+                if (id) url = `https://drive.google.com/file/d/${id}/preview`;
+            }
+        } else if (m.link) { url = m.link.url; title = m.link.title || "Link"; icon = "🌐"; }
+        if (!url) return "";
+        return `<a href="${url}" target="_blank" class="btn-material"><span>${icon}</span> ${title}</a>`;
+    }
+
+    async function openCourse(courseId, name) {
+        document.getElementById('overlay-title').innerText = name;
+        const container = document.getElementById('overlay-content');
+        document.getElementById('course-overlay').style.display = 'block';
+        container.innerHTML = "<p style='text-align:center;'>Fetching Data...</p>";
+
+        const [w, s] = await Promise.all([
+            gapi.client.classroom.courses.courseWork.list({ courseId }),
+            gapi.client.classroom.courses.courseWork.studentSubmissions.list({ courseId, courseWorkId: "-" })
+        ]);
+
+        const work = w.result.courseWork || [];
+        const subs = s.result.studentSubmissions || [];
+
+        if (currentTab === 'work') {
+            const todo = work.filter(a => {
+                const sub = subs.find(x => x.courseWorkId === a.id);
+                return sub?.state !== 'TURNED_IN' && sub?.state !== 'RETURNED';
+            });
+
+            container.innerHTML = todo.map(a => `
+                <div class="card">
+                    <h3>${a.title}</h3>
+                    <p style="font-size: 14px; color: #555; line-height: 1.4; margin: 10px 0;">${a.description || 'No description provided.'}</p>
+                    <div class="materials">${(a.materials || []).map(m => getMaterialHTML(m)).join('')}</div>
+                    <button class="btn-open" onclick="window.open('${a.alternateLink}', '_blank')">🚀 Open Assignment</button>
+                </div>`).join('') || "🎉 No pending work!";
+        } else {
+            let earned = 0, possible = 0, count = 0;
+            const gradedHtml = work.map(a => {
+                const sub = subs.find(x => x.courseWorkId === a.id);
+                if (!sub || sub.assignedGrade === undefined) return "";
+                
+                earned += sub.assignedGrade;
+                possible += a.maxPoints;
+                count++;
+                const pct = Math.round((sub.assignedGrade / a.maxPoints) * 100);
+                const color = pct >= 70 ? 'passing' : (pct >= 60 ? 'warning' : 'failing');
+
+                return `<div class="card">
+                    <span class="grade-pill ${color}">${sub.assignedGrade}/${a.maxPoints}</span>
+                    <h3 style="margin-right:70px;">${a.title}</h3>
+                </div>`;
+            }).join('');
+
+            const totalPct = possible > 0 ? Math.round((earned / possible) * 100) : 0;
+            container.innerHTML = `
+                <div class="summary-box">
+                    <div style="font-size:0.8rem; opacity:0.8;">CURRENT AVERAGE</div>
+                    <div style="font-size:2.5rem; font-weight:800;">${count > 0 ? totalPct + '%' : 'N/A'}</div>
+                </div>
+                ${gradedHtml || "<p style='text-align:center;'>No grades recorded yet.</p>"}
+            `;
+        }
+    }
+
+    function closeOverlay() { document.getElementById('course-overlay').style.display = 'none'; }
+</script>
+</body>
+</html>
