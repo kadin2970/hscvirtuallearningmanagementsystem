@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HSC VLMS - Mobile Portal</title>
+    <style>
+        :root { 
+            --nav-blue: #003366; --success-green: #27ae60; --warning-yellow: #ffc107; 
+            --bg-gray: #f8f9fa; --card-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background: var(--bg-gray); display: flex; flex-direction: column; height: 100vh; color: #333; }
+        
+        .sidebar { width: 100%; background: var(--nav-blue); color: white; padding: 12px; display: flex; overflow-x: auto; gap: 8px; position: sticky; top: 0; z-index: 1000; box-sizing: border-box; }
+        .sidebar h2 { font-size: 1.1rem; margin: 0; align-self: center; white-space: nowrap; padding-right: 10px; border-right: 1px solid rgba(255,255,255,0.2); }
+
+        .sidebar button, .action-btn { padding: 12px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+        .btn-sync { background: var(--success-green); color: white; }
+        .btn-nav { background: rgba(255,255,255,0.15); color: white; }
+
+        .main { padding: 20px 15px 100px 15px; flex-grow: 1; overflow-y: auto; }
+        .status-bar { padding: 12px; border-radius: 10px; font-weight: bold; text-align: center; margin-bottom: 20px; background: var(--warning-yellow); font-size: 14px; }
+
+        .course-grid { display: grid; grid-template-columns: 1fr; gap: 15px; }
+        .course-item { padding: 20px; background: white; border-radius: 15px; box-shadow: var(--card-shadow); border-left: 8px solid var(--nav-blue); display: flex; justify-content: space-between; align-items: center; }
+
+        #assignment-view { display:none; position:fixed; inset: 0; background: white; z-index: 2000; padding: 20px; overflow-y: auto; }
+
+        .assignment-card { border: 1px solid #eee; padding: 20px; border-radius: 16px; margin-bottom: 20px; background: #fff; box-shadow: var(--card-shadow); }
+        
+        .btn-material { 
+            display: flex; align-items: center; gap: 12px; width: 100%; padding: 15px; 
+            margin-bottom: 12px; border-radius: 10px; border: 2px solid #e1e7f0; 
+            background: #ffffff; color: #003366; font-weight: 700; 
+            text-align: left; font-size: 15px; cursor: pointer;
+        }
+
+        .btn-turnin { background: var(--nav-blue); color: white; padding: 18px; border: none; border-radius: 12px; width: 100%; font-size: 16px; font-weight: bold; margin-top: 15px; }
+
+        /* Loading Spinner Style */
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--nav-blue);
+            border-radius: 50%; animation: spin 1s linear infinite; margin: 20px auto;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loading-text { text-align: center; color: #666; font-weight: 600; }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar">
+        <h2>HSC Portal</h2>
+        <button id="sync-main-btn" class="btn-sync" onclick="handleAuthClick()" disabled>🔄 Sync</button>
+        <button class="btn-nav" onclick="showSection('classes')">📂 Work</button>
+        <button class="btn-nav" onclick="showSection('grades')">📊 Grades</button>
+    </nav>
+
+    <main class="main">
+        <div id="conn-status" class="status-bar">Connecting to Google...</div>
+        <section id="section-classes">
+            <h1>Active Work</h1>
+            <div id="courses-list" class="course-grid">Tap Sync to begin.</div>
+        </section>
+        <section id="section-grades" style="display:none;">
+            <h1>Grades</h1>
+            <div id="grades-list">Sync to view.</div>
+        </section>
+    </main>
+
+    <div id="assignment-view">
+        <div style="display:flex; justify-content: space-between; margin-bottom: 20px;">
+            <button class="action-btn btn-sync" onclick="fullSync()">🔄 Refresh</button>
+            <button onclick="closeAssignments()" class="action-btn" style="background:#eee;">✕ Close</button>
+        </div>
+        <h2 id="selected-course-title"></h2>
+        <div id="work-list"></div>
+    </div>
+
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
+
+    <script>
+        const CLIENT_ID = '1042342028327-pliq405qso25f01br911ksqhn8f3jkgk.apps.googleusercontent.com';
+        const API_KEY = 'AIzaSyC1pl8M0jb_Os4eODhnuKmzKqQC4Ommxi4';
+        
+        let tokenClient, gapiInited = false, gsiInited = false;
+
+        function initGapi() {
+            gapi.client.init({ apiKey: API_KEY, discoveryDocs: ["https://classroom.googleapis.com/$discovery/rest?version=v1"] })
+                .then(() => { gapiInited = true; checkReady(); });
+        }
+
+        function initGsi() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: 'https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.me https://www.googleapis.com/auth/classroom.student-submissions.me.readonly',
+                callback: (resp) => { if (resp.access_token) { document.getElementById('conn-status').innerText = "Connected ✅"; fullSync(); } }
+            });
+            gsiInited = true; checkReady();
+        }
+
+        window.onload = () => { gapi.load('client', initGapi); initGsi(); };
+        function checkReady() { if (gapiInited && gsiInited) document.getElementById('sync-main-btn').disabled = false; }
+        function handleAuthClick() { tokenClient.requestAccessToken({prompt: 'consent'}); }
+
+        function getMediaPreview(m) {
+            if (!m) return "";
+            let url = "", title = "Untitled File", icon = "📁";
+
+            if (m.driveFile) {
+                url = m.driveFile.alternateLink || "";
+                title = m.driveFile.title || "Drive File";
+                const lowerTitle = title.toLowerCase();
+                if (lowerTitle.includes("video") || title.match(/\.(mp4|mov|webm)$/i)) {
+                    icon = "🎬";
+                    const fileId = url.match(/\/d\/([^\/]+)/)?.[1];
+                    if (fileId) url = `https://drive.google.com/file/d/${fileId}/preview`;
+                } else if (lowerTitle.includes("notes") || (url && url.includes("presentation"))) {
+                    icon = "📊";
+                }
+            } else if (m.link) {
+                url = m.link.url || "";
+                title = m.link.title || "Link";
+                icon = "🌐";
+            } else if (m.youtubeVideo) {
+                url = m.youtubeVideo.alternateLink || "";
+                title = m.youtubeVideo.title || "YouTube";
+                icon = "📺";
+            }
+
+            if (!url) return "";
+
+            return `
+                <div class="btn-material" onclick="window.open('${url}', '_blank', 'noopener,noreferrer')">
+                    <span style="font-size:22px;">${icon}</span>
+                    <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${title}</div>
+                </div>`;
+        }
+
+        async function fullSync() {
+            try {
+                const resp = await gapi.client.classroom.courses.list();
+                const courses = resp.result.courses || [];
+                document.getElementById('courses-list').innerHTML = courses.map(c => `
+                    <div class="course-item" onclick="viewWork('${c.id}', '${c.name.replace(/'/g, "\\'")}')">
+                        <strong>${c.name}</strong><span>›</span>
+                    </div>`).join('');
+            } catch (e) { console.error(e); }
+        }
+
+        async function viewWork(id, name) {
+            document.getElementById('selected-course-title').innerText = name;
+            document.getElementById('assignment-view').style.display = 'block';
+            const list = document.getElementById('work-list');
+            
+            // Show Loading Spinner
+            list.innerHTML = `
+                <div class="spinner"></div>
+                <div class="loading-text">Fetching files from Google Drive...</div>
+            `;
+            
+            try {
+                const [w, s] = await Promise.all([
+                    gapi.client.classroom.courses.courseWork.list({ courseId: id }),
+                    gapi.client.classroom.courses.courseWork.studentSubmissions.list({ courseId: id, courseWorkId: "-" })
+                ]);
+
+                const work = w.result.courseWork || [];
+                const subs = s.result.studentSubmissions || [];
+
+                list.innerHTML = work.filter(a => {
+                    const sub = subs.find(x => x.courseWorkId === a.id);
+                    return !(sub?.state === 'TURNED_IN' || sub?.state === 'RETURNED');
+                }).map(a => `
+                    <div class="assignment-card">
+                        <h3>${a.title || 'Untitled'}</h3>
+                        <p style="color:#666; font-size:14px; margin-bottom:15px;">${a.description || ''}</p>
+                        <div class="materials-list">
+                            ${(a.materials || []).map(m => getMediaPreview(m)).join('')}
+                        </div>
+                        <button class="btn-turnin" onclick="window.open('${a.alternateLink}', '_blank', 'noopener,noreferrer')">Turn In</button>
+                    </div>`).join('') || "🎉 All caught up!";
+            } catch (e) {
+                list.innerHTML = "<div class='loading-text'>Error loading files. Check your connection.</div>";
+            }
+        }
+
+        function showSection(id) { 
+            document.getElementById('section-classes').style.display = id === 'classes' ? 'block' : 'none';
+            document.getElementById('section-grades').style.display = id === 'grades' ? 'block' : 'none';
+        }
+        function closeAssignments() { document.getElementById('assignment-view').style.display = 'none'; }
+    </script>
+</body>
+</html>
