@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HSC VLMS - Mobile Portal</title>
+    <style>
+        :root { 
+            --nav-blue: #003366; 
+            --success-green: #27ae60; 
+            --warning-yellow: #ffc107; 
+            --error-red: #d93025;
+            --past-due-bg: #fff5f5;
+            --bg-gray: #f8f9fa;
+            --card-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            --drive-purple: #7030a0;
+            --drive-blue: #4285f4;
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            margin: 0; background: var(--bg-gray); display: flex; flex-direction: column; height: 100vh; color: #333;
+        }
+
+        .sidebar { 
+            width: 100%; background: var(--nav-blue); color: white; padding: 12px; 
+            display: flex; overflow-x: auto; gap: 8px; position: sticky; top: 0; z-index: 1000; box-sizing: border-box;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .sidebar h2 { font-size: 1.1rem; margin: 0; align-self: center; white-space: nowrap; padding-right: 10px; border-right: 1px solid rgba(255,255,255,0.2); }
+
+        .sidebar button, .action-btn { 
+            padding: 12px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; 
+            white-space: nowrap; cursor: pointer; transition: opacity 0.2s; -webkit-tap-highlight-color: transparent;
+        }
+        
+        .btn-sync { background: var(--success-green); color: white; }
+        .btn-nav { background: rgba(255,255,255,0.15); color: white; }
+
+        .main { padding: 20px 15px 100px 15px; flex-grow: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        
+        h1 { font-size: 1.5rem; margin-top: 0; letter-spacing: -0.5px; }
+
+        .status-bar { padding: 12px; border-radius: 10px; font-weight: bold; text-align: center; margin-bottom: 20px; background: var(--warning-yellow); font-size: 14px; }
+        
+        .sync-label { font-size: 11px; opacity: 0.8; color: white; padding: 5px; text-align: center; white-space: nowrap; align-self: center; cursor: pointer; }
+
+        .course-grid { display: grid; grid-template-columns: 1fr; gap: 15px; }
+        .course-item { 
+            padding: 20px; background: white; border-radius: 15px; box-shadow: var(--card-shadow); 
+            border-left: 8px solid var(--nav-blue); display: flex; justify-content: space-between; align-items: center;
+        }
+
+        #assignment-view { 
+            display:none; position:fixed; top:0; left:0; right:0; bottom:0; background: white; 
+            z-index: 2000; padding: 20px; overflow-y: auto; animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        .assignment-card { 
+            border: 1px solid #eee; padding: 20px; border-radius: 16px; margin-bottom: 20px; 
+            background: #fff; box-shadow: var(--card-shadow); position: relative;
+        }
+
+        .video-container { 
+            position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; 
+            border-radius: 12px; margin: 10px 0; background: #000;
+        }
+        .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+
+        .btn-turnin { 
+            background: var(--nav-blue); color: white; padding: 16px; border: none; 
+            border-radius: 12px; width: 100%; font-size: 16px; font-weight: bold; margin-bottom: 8px;
+        }
+
+        .btn-link {
+            background: #e1e7f0; color: var(--nav-blue); padding: 12px; border: none; 
+            border-radius: 8px; width: 100%; font-size: 14px; font-weight: 600; margin-bottom: 5px; text-align: left;
+        }
+
+        .btn-drive-file {
+            background: #f1f3f4; color: #3c4043; border: 1px solid #dadce0; padding: 12px;
+            border-radius: 8px; width: 100%; font-size: 14px; font-weight: 600; margin-bottom: 8px; text-align: left;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        .btn-drive-video {
+            background: var(--drive-purple); color: white; padding: 12px; border: none; 
+            border-radius: 8px; width: 100%; font-size: 14px; font-weight: 600; margin-bottom: 8px; text-align: left;
+        }
+
+        .total-pill { color: white; padding: 5px 15px; border-radius: 20px; font-weight: 800; font-size: 0.9rem; }
+
+        @media (min-width: 768px) {
+            body { flex-direction: row; }
+            .sidebar { width: 240px; flex-direction: column; height: 100vh; position: fixed; padding: 30px 20px; }
+            .main { margin-left: 240px; padding: 40px; }
+            .course-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+            #assignment-view { left: 240px; padding: 40px; }
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar">
+        <h2>HSC Portal</h2>
+        <button id="sync-main-btn" class="btn-sync" onclick="handleAuthClick()" disabled>🔄 Sync</button>
+        <button class="btn-nav" onclick="showSection('classes')">📂 Work</button>
+        <button class="btn-nav" onclick="showSection('grades')">📊 Grades</button>
+        <button class="btn-nav" onclick="showSection('roster')">👥 Roster</button>
+        <div id="last-sync-time" class="sync-label" onclick="fullSync()">Not synced</div>
+    </nav>
+
+    <main class="main">
+        <div id="conn-status" class="status-bar">Connecting to Google Services...</div>
+        
+        <section id="section-classes">
+            <h1>Active Work</h1>
+            <div id="courses-list" class="course-grid">Click Sync to load Classroom data.</div>
+        </section>
+
+        <section id="section-grades" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h1>My Gradebook</h1>
+                <button class="action-btn btn-sync" onclick="loadAllGrades()">Refresh</button>
+            </div>
+            <div id="grades-list">Sync to view grades.</div>
+        </section>
+
+        <section id="section-roster" style="display:none;">
+            <h1>Class Roster</h1>
+            <div id="roster-list"></div>
+        </section>
+    </main>
+
+    <div id="assignment-view">
+        <div class="overlay-header">
+            <button class="action-btn btn-sync" onclick="fullSync()">🔄 Refresh All</button>
+            <button onclick="closeAssignments()" class="action-btn" style="background:#eee;">✕ Close</button>
+        </div>
+        <h2 id="selected-course-title">Loading...</h2>
+        <div id="work-list"></div>
+    </div>
+
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
+
+    <script>
+        const CLIENT_ID = '1042342028327-pliq405qso25f01br911ksqhn8f3jkgk.apps.googleusercontent.com';
+        const API_KEY = 'AIzaSyC1pl8M0jb_Os4eODhnuKmzKqQC4Ommxi4';
+        
+        let tokenClient;
+        let gapiInited = false;
+        let gsiInited = false;
+        let currentCourseId = null;
+        let currentCourseName = null;
+
+        async function initGapi() {
+            try {
+                await gapi.client.init({ apiKey: API_KEY, discoveryDocs: ["https://classroom.googleapis.com/$discovery/rest?version=v1"] });
+                gapiInited = true; checkAuthReady();
+            } catch (err) { console.error(err); }
+        }
+
+        function initGsi() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: 'https://www.googleapis.com/auth/classroom.courses.readonly https://www.googleapis.com/auth/classroom.coursework.me https://www.googleapis.com/auth/classroom.student-submissions.me.readonly https://www.googleapis.com/auth/classroom.announcements.readonly',
+                callback: async (resp) => { if (resp.access_token) { document.getElementById('conn-status').innerText = "Connected ✅"; await fullSync(); } }
+            });
+            gsiInited = true; checkAuthReady();
+        }
+
+        window.onload = () => { gapi.load('client', initGapi); initGsi(); };
+        function checkAuthReady() { if (gapiInited && gsiInited) document.getElementById('sync-main-btn').disabled = false; }
+        function handleAuthClick() { tokenClient.requestAccessToken({prompt: 'consent'}); }
+
+        // Drive File Type Icon Helper
+        function getDriveFileIcon(url) {
+            if (url.includes('presentation')) return '📊';
+            if (url.includes('document')) return '📄';
+            if (url.includes('spreadsheets')) return '📈';
+            if (url.includes('pdf')) return '📕';
+            return '📁';
+        }
+
+        // Media and File Detection Helper
+        function getMediaPreview(item) {
+            if (!item.link && !item.driveFile) return "";
+
+            const url = item.link ? item.link.url : item.driveFile.alternateLink;
+            const title = item.link ? item.link.title : item.driveFile.title;
+
+            // YouTube detection
+            const ytRegExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const ytMatch = url.match(ytRegExp);
+            if (ytMatch && ytMatch[2].length == 11) {
+                return `<div class="video-container"><iframe src="https://www.youtube.com/embed/${ytMatch[2]}" allowfullscreen></iframe></div>`;
+            }
+            
+            // Google Drive Video detection (specifically mp4/webm types)
+            const driveVideoRegExp = /drive\.google\.com\/file\/d\/([^\/]+)/;
+            const driveMatch = url.match(driveVideoRegExp);
+            
+            if (driveMatch) {
+                const fileId = driveMatch[1];
+                // Check if it's explicitly a driveFile object from API with video mimetype
+                if (item.driveFile && item.driveFile.thumbnailUrl && item.driveFile.alternateLink.includes('file')) {
+                     return `<button class="btn-drive-video" onclick="window.open('https://drive.google.com/file/d/${fileId}/preview', '_blank')">🎬 Watch Video: ${title || 'Drive Video'}</button>`;
+                }
+                // General Drive File (PDF, Docs, etc)
+                const icon = getDriveFileIcon(url);
+                return `<button class="btn-drive-file" onclick="window.open('${url}', '_blank')"><span>${icon}</span> ${title || 'View File'}</button>`;
+            }
+            
+            return `<button class="btn-link" onclick="window.open('${url}', '_blank')">🔗 ${title || 'External Link'}</button>`;
+        }
+
+        async function fullSync() {
+            await Promise.all([listCourses(), loadAllGrades()]);
+            if (currentCourseId) await viewWork(currentCourseId, currentCourseName);
+            const now = new Date();
+            document.getElementById('last-sync-time').innerText = `Last Sync: ${now.toLocaleTimeString()}`;
+        }
+
+        async function listCourses() {
+            const resp = await gapi.client.classroom.courses.list();
+            const courses = resp.result.courses || [];
+            document.getElementById('courses-list').innerHTML = courses.map(c => `
+                <div class="course-item" onclick="viewWork('${c.id}', '${c.name.replace(/'/g, "\\'")}')">
+                    <div><strong>${c.name}</strong></div><span style="font-size:20px;">›</span>
+                </div>`).join('');
+        }
+
+        async function viewWork(courseId, name) {
+            currentCourseId = courseId; currentCourseName = name;
+            document.getElementById('selected-course-title').innerText = name;
+            document.getElementById('assignment-view').style.display = 'block';
+            
+            try {
+                const [workR, subR] = await Promise.all([
+                    gapi.client.classroom.courses.courseWork.list({ courseId: courseId }),
+                    gapi.client.classroom.courses.courseWork.studentSubmissions.list({ courseId: courseId, courseWorkId: "-" })
+                ]);
+                const assignments = workR.result.courseWork || [];
+                const subs = subR.result.studentSubmissions || [];
+
+                document.getElementById('work-list').innerHTML = assignments.filter(a => {
+                    const s = subs.find(sub => sub.courseWorkId === a.id);
+                    return !(s && (s.state === 'TURNED_IN' || s.state === 'RETURNED'));
+                }).map(a => {
+                    let materialsHtml = "";
+                    if (a.materials) {
+                        // This now maps over BOTH link-based and driveFile-based materials
+                        materialsHtml = a.materials.map(m => getMediaPreview(m)).join('');
+                    }
+
+                    return `<div class="assignment-card">
+                        <h3>${a.title}</h3>
+                        <p class="description-text">${a.description || ''}</p>
+                        ${materialsHtml}
+                        <button class="btn-turnin" onclick="window.open('${a.alternateLink}', '_blank')">Turn In</button>
+                    </div>`;
+                }).join('') || "🎉 All caught up!";
+            } catch (e) { document.getElementById('work-list').innerHTML = "Error loading work."; }
+        }
+
+        function getGradeInfo(percent) {
+            if (percent >= 90) return { letter: 'A', color: 'var(--success-green)' };
+            if (percent >= 80) return { letter: 'B', color: '#2ecc71' };
+            if (percent >= 70) return { letter: 'C', color: 'var(--warning-yellow)' };
+            if (percent >= 60) return { letter: 'D', color: '#e67e22' };
+            return { letter: 'F', color: 'var(--error-red)' };
+        }
+
+        async function loadAllGrades() {
+            const cResp = await gapi.client.classroom.courses.list();
+            const courses = (cResp.result.courses || []).filter(c => !c.name.toLowerCase().includes("homework help"));
+            let html = "";
+            for (let c of courses) {
+                const sResp = await gapi.client.classroom.courses.courseWork.studentSubmissions.list({ courseId: c.id, courseWorkId: "-" });
+                const graded = (sResp.result.studentSubmissions || []).filter(s => s.assignedGrade !== undefined);
+                if (graded.length > 0) {
+                    let earned = 0, possible = 0;
+                    for (let s of graded) {
+                        const cw = await gapi.client.classroom.courses.courseWork.get({ courseId: c.id, id: s.courseWorkId });
+                        earned += s.assignedGrade; possible += (cw.result.maxPoints || 0);
+                    }
+                    const pct = possible > 0 ? ((earned / possible) * 100).toFixed(1) : 0;
+                    const info = getGradeInfo(parseFloat(pct));
+                    html += `<div style="margin-bottom:20px; border-bottom:1px solid #ddd; padding-bottom:10px;">
+                        <div style="display:flex; justify-content:space-between;">
+                            <strong>${c.name}</strong>
+                            <span class="total-pill" style="background:${info.color}">${info.letter} (${pct}%)</span>
+                        </div>
+                    </div>`;
+                }
+            }
+            document.getElementById('grades-list').innerHTML = html || "No grades yet.";
+        }
+
+        function showSection(id) { 
+            ['classes', 'grades', 'roster'].forEach(s => document.getElementById('section-' + s).style.display = s === id ? 'block' : 'none'); 
+            document.getElementById('assignment-view').style.display = 'none';
+        }
+        function closeAssignments() { document.getElementById('assignment-view').style.display = 'none'; }
+    </script>
+</body>
+</html>
