@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HSC Admin Terminal</title>
+    <style>
+        :root { --hsc-blue: #002147; --hsc-accent: #38bdf8; --hsc-glass: rgba(255,255,255,0.1); }
+        body { background: var(--hsc-blue); color: white; font-family: sans-serif; margin: 0; display: flex; height: 100vh; }
+        #nav { width: 280px; border-right: 1px solid var(--hsc-glass); padding: 30px; }
+        #view { flex: 1; padding: 40px; overflow-y: auto; }
+        
+        .hsc-btn { background: white; color: var(--hsc-blue); border: none; padding: 12px; font-weight: bold; cursor: pointer; width: 100%; margin-bottom: 10px; border-radius: 4px; }
+        .hsc-btn:hover { background: var(--hsc-accent); }
+        .logout-btn { background: #ff4b4b; color: white; margin-top: 50px; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9rem; }
+        th { text-align: left; padding: 12px; border-bottom: 2px solid var(--hsc-accent); }
+        td { padding: 10px; border-bottom: 1px solid var(--hsc-glass); }
+        
+        .edit-input { background: var(--hsc-glass); border: 1px solid #555; color: white; padding: 5px; border-radius: 3px; width: 90%; }
+    </style>
+</head>
+<body>
+    <div id="nav">
+        <h2 style="letter-spacing: 1px; border-bottom: 2px solid var(--hsc-accent); padding-bottom: 10px;">HSC ADMIN</h2>
+        <button class="hsc-btn" onclick="drawUsers()">Manage Users</button>
+        <button class="hsc-btn" onclick="drawCreator()">Assignment Creator</button>
+        <button class="hsc-btn logout-btn" onclick="logout()">Sign Out</button>
+    </div>
+    
+    <div id="view">
+        <h1>Institutional Control</h1>
+        <p>Select a management module to proceed.</p>
+    </div>
+
+    <script type="module">
+        import { hsc } from './hsc-core.js';
+
+        window.drawUsers = () => {
+            let html = `<h2>Credential Registry</h2>
+            <table>
+                <tr>
+                    <th>Real Name</th>
+                    <th>Username</th>
+                    <th>Password</th>
+                    <th>Grade</th>
+                    <th>Action</th>
+                </tr>`;
+            
+            hsc.db.users.forEach(u => {
+                html += `<tr>
+                    <td><input type="text" id="name-${u.id}" class="edit-input" value="${u.name}"></td>
+                    <td><input type="text" id="user-${u.id}" class="edit-input" value="${u.username}"></td>
+                    <td><input type="text" id="pass-${u.id}" class="edit-input" value="${u.password}"></td>
+                    <td><input type="text" id="grade-${u.id}" class="edit-input" style="width:50px" value="${u.grade}"></td>
+                    <td><button onclick="saveChanges('${u.id}')">Save</button></td>
+                </tr>`;
+            });
+            html += `</table>`;
+            document.getElementById('view').innerHTML = html;
+        };
+
+        window.saveChanges = (id) => {
+            const updated = {
+                name: document.getElementById(`name-${id}`).value,
+                username: document.getElementById(`user-${id}`).value,
+                password: document.getElementById(`pass-${id}`).value,
+                grade: document.getElementById(`grade-${id}`).value
+            };
+            hsc.updateUser(id, updated);
+            alert("HSC Database Synchronized.");
+            drawUsers();
+        };
+
+        window.drawCreator = () => {
+            document.getElementById('view').innerHTML = `
+                <h2>Create Assignment</h2>
+                <input id="title" class="edit-input" style="padding:12px; margin-bottom:10px;" placeholder="Title">
+                <textarea id="desc" class="edit-input" style="padding:12px; margin-bottom:10px;" rows="4" placeholder="Instructions"></textarea>
+                <input id="link" class="edit-input" style="padding:12px; margin-bottom:10px;" placeholder="Library URL">
+                <button class="hsc-btn" onclick="publish()">Publish</button>
+            `;
+        };
+
+        window.publish = () => {
+            hsc.publishAssignment(
+                document.getElementById('title').value,
+                document.getElementById('desc').value,
+                document.getElementById('link').value
+            );
+            alert("Assignment Published.");
+            drawCreator();
+        };
+
+        window.logout = () => {
+            localStorage.removeItem('HSC_CURRENT_USER');
+            window.location.href = 'index.html';
+        };
+    </script>
+</body>
+</html>
