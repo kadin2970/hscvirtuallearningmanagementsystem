@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HSC Student Terminal</title>
+    <style>
+        :root { --hsc-blue: #002147; --hsc-accent: #38bdf8; --hsc-glass: rgba(255, 255, 255, 0.1); }
+        body { background: var(--hsc-blue); color: white; font-family: sans-serif; padding: 40px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--hsc-accent); padding-bottom: 20px; }
+        .card { background: var(--hsc-glass); padding: 20px; margin-top: 20px; border-radius: 8px; }
+        .grade-display { font-size: 2rem; color: var(--hsc-accent); font-weight: bold; }
+        .btn { background: white; color: var(--hsc-blue); border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 4px; }
+        table { width: 100%; margin-top: 20px; }
+        th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--hsc-glass); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>HUDSON STUDENT PORTAL</h1>
+        <div>
+            <button class="btn" onclick="location.reload()">Refresh Data</button>
+            <button class="btn" style="background:#ff4b4b; color:white" onclick="location.href='index.html'">Logout</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Current Academic Standing</h3>
+        <div id="final-grade" class="grade-display">Loading...</div>
+    </div>
+
+    <div class="card">
+        <h3>Assigned Work & Grades</h3>
+        <table id="assign-table">
+            <tr><th>Assignment</th><th>Description</th><th>Score / Max Points</th></tr>
+        </table>
+    </div>
+
+    <script type="module">
+        import { hsc } from './hsc-core.js';
+        const user = JSON.parse(localStorage.getItem('HSC_CURRENT_USER'));
+        if (!user) window.location.href = 'index.html';
+
+        // Update local session with latest data from DB
+        const latestData = hsc.db.users.find(u => u.id === user.id);
+        document.getElementById('final-grade').innerText = latestData.finalGrade;
+
+        const table = document.getElementById('assign-table');
+        hsc.db.assignments.forEach(a => {
+            const sub = hsc.db.submissions.find(s => s.studentId === user.id && s.assignmentId === a.id);
+            const score = sub ? sub.score : "Not Graded";
+            table.innerHTML += `<tr><td>${a.title}</td><td>${a.desc}</td><td>${score} / ${a.points}</td></tr>`;
+        });
+    </script>
+</body>
+</html>
