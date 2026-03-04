@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HSC Student Portal</title>
+    <style>
+        :root { 
+            --hsc-blue: #003366; 
+            --hsc-light: #004a99;
+            --hsc-white: #ffffff;
+            --hsc-accent: #00d4ff;
+        }
+        body { 
+            background: var(--hsc-blue); color: var(--hsc-white); 
+            font-family: 'Segoe UI', sans-serif; margin: 0; padding: 40px; 
+        }
+        .header { 
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 2px solid white; padding-bottom: 20px; margin-bottom: 30px;
+        }
+        .stats-container {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;
+        }
+        .stat-card {
+            background: var(--hsc-light); padding: 20px; border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.2); text-align: center;
+        }
+        .grade-text { font-size: 2.5rem; font-weight: bold; color: var(--hsc-accent); }
+        
+        .assignment-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .card { 
+            background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; 
+            border-left: 5px solid var(--hsc-accent); transition: 0.3s;
+        }
+        .btn-submit { 
+            width: 100%; padding: 12px; margin-top: 15px; border: none; border-radius: 4px;
+            cursor: pointer; font-weight: bold; text-transform: uppercase;
+            background: var(--hsc-accent); color: var(--hsc-blue);
+        }
+        .btn-submit:disabled { background: #555; color: #aaa; cursor: not-allowed; }
+        
+        a.resource-link { 
+            display: inline-block; margin-top: 10px; color: var(--hsc-accent); 
+            text-decoration: none; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>HSC Student Workspace</h1>
+        <button onclick="location.reload()" style="padding:10px; cursor:pointer;">Refresh Portal</button>
+    </div>
+
+    <div class="stats-container">
+        <div class="stat-card">
+            <h3>Final Grade</h3>
+            <div id="display-grade" class="grade-text">0%</div>
+        </div>
+        <div class="stat-card">
+            <h3>Total Points</h3>
+            <div id="display-points" class="grade-text">0</div>
+        </div>
+    </div>
+
+    <h2>Pending Assignments</h2>
+    <div id="feed" class="assignment-grid"></div>
+
+    <script type="module">
+        import { hsc } from './hsc-core.js';
+
+        // --- GATEKEEPER: STUDENT CHECK ---
+        const session = JSON.parse(localStorage.getItem('HSC_CURRENT_USER'));
+        if (!session || session.role !== 'student') {
+            window.location.href = 'index.html';
+        }
+
+        const me = hsc.db.users.find(u => u.id === session.id);
+        const feed = document.getElementById('feed');
+
+        // 1. UPDATE STATS (Always includes graded work)
+        document.getElementById('display-grade').innerText = me.finalGrade || "0%";
+        
+        const totalPoints = hsc.db.submissions
+            .filter(s => s.studentId === me.id)
+            .reduce((acc, curr) => acc + (curr.score || 0), 0);
+        document.getElementById('display-points').innerText = totalPoints;
+
+        // 2. FILTER LOGIC: Hide assignments if status is "Graded"
+        const activeTasks = hsc.db.assignments.filter(task => {
+            const sub = hsc.db.submissions.find(s => s.studentId === me.id && s.assignmentId === task.id);
+            return !(sub && sub.status === "Graded");
+        });
+
+        // 3. RENDER FEED
+        if (activeTasks.length === 0) {
+            feed.innerHTML = "<div class='card'><h3>All Tasks Complete</h3><p>Check your final grade above for your latest results.</p></div>";
+        }
+
+        activeTasks.forEach(task => {
+            const sub = hsc.db.submissions.find(s => s.studentId === me.id && s.assignmentId === task.id);
+            const isTurnedIn = sub && sub.status === "Turned In";
+
+            feed.innerHTML += `
+                <div class="card">
+                    <h3>${task.title}</h3>
+                    <p>Weight: ${task.points} Points</p>
+                    <p>Status: ${isTurnedIn ? "✅ Turned In (Awaiting Grade)" : "❌ Not Submitted"}</p>
+                    <a href="${task.link}" target="_blank" class="resource-link">🔗 View Resource</a>
+                    <button class="btn-submit" onclick="turnIn('${task.id}')" ${isTurnedIn ? 'disabled' : ''}>
+                        ${isTurnedIn ? 'Pending Review' : 'Turn In Now'}
+                    </button>
+                </div>
+            `;
+        });
+
+        // 4. GLOBAL BINDING FOR ONCLICK
+        window.turnIn = (taskId) => {
+            hsc.submitAssignment(me.id, taskId);
+            alert("Work submitted to the Master Terminal.");
+            location.reload();
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HSC Master Terminal</title>
+    <style>
+        :root { --hsc-blue: #003366; --hsc-light: #004a99; --hsc-white: #ffffff; --hsc-danger: #d93025; }
+        body { background: var(--hsc-blue); color: var(--hsc-white); font-family: sans-serif; display: flex; margin: 0; height: 100vh; }
+        #sidebar { width: 260px; background: var(--hsc-light); border-right: 1px solid rgba(255,255,255,0.2); padding: 20px; }
+        .nav-btn { width: 100%; padding: 12px; margin-bottom: 10px; background: transparent; color: white; border: 1px solid white; cursor: pointer; text-align: left; border-radius: 4px; font-weight: bold; }
+        .nav-btn:hover { background: white; color: var(--hsc-blue); }
+        #content { flex: 1; padding: 40px; overflow-y: auto; }
+        .hsc-input { background: rgba(255,255,255,0.1); border: 1px solid white; color: white; padding: 10px; margin: 5px; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { text-align: left; padding: 15px; background: rgba(255,255,255,0.2); }
+        td { padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .action-btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .btn-save { background: #2ecc71; color: white; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>HSC MASTER</h2>
+        <button class="nav-btn" onclick="drawUserMgmt()">User Management</button>
+        <button class="nav-btn" onclick="drawAssignMgmt()">Assignment Management</button>
+        <button class="nav-btn" onclick="drawGradeMgmt()">Grade Management</button>
+        <button class="nav-btn" onclick="drawTracking()">Turn In Tracking</button>
+        <button class="nav-btn" style="margin-top:30px; background:var(--hsc-danger); border:none;" onclick="logout()">Sign Out</button>
+    </div>
+    <div id="content"></div>
+
+    <script type="module">
+        import { hsc } from './hsc-core.js';
+
+        // --- GATEKEEPER ---
+        const session = JSON.parse(localStorage.getItem('HSC_CURRENT_USER'));
+        if (!session || session.role !== 'admin') {
+            hsc.logViolation(session?.username || "Guest", "Admin Access Breach");
+            window.location.href = 'index.html';
+        }
+
+        // --- GLOBAL BINDINGS ---
+        window.logout = () => { localStorage.removeItem('HSC_CURRENT_USER'); window.location.href='index.html'; };
+
+        window.drawUserMgmt = () => {
+            let html = `<h1>User Management</h1>
+            <div style="border:1px solid white; padding:15px; margin-bottom:20px;">
+                <h3>Register Student</h3>
+                <input id="cn" class="hsc-input" placeholder="Name">
+                <input id="cu" class="hsc-input" placeholder="User">
+                <input id="cp" class="hsc-input" type="password" placeholder="Pass">
+                <button class="action-btn btn-save" onclick="addStudent()">+ Register</button>
+            </div>
+            <table><tr><th>Name</th><th>Action</th></tr>`;
+            hsc.db.users.forEach(u => {
+                html += `<tr><td><input id="n-${u.id}" class="hsc-input" value="${u.name}"></td>
+                <td><button class="action-btn btn-save" onclick="saveUser('${u.id}')">Save</button></td></tr>`;
+            });
+            document.getElementById('content').innerHTML = html + `</table>`;
+        };
+
+        window.addStudent = () => {
+            hsc.addUser(document.getElementById('cn').value, document.getElementById('cu').value, document.getElementById('cp').value, 'student');
+            drawUserMgmt();
+        };
+
+        window.saveUser = (id) => {
+            hsc.editUser(id, document.getElementById(`n-${id}`).value, "N/A", "N/A"); // simplified for example
+            alert("Saved.");
+        };
+
+        window.drawAssignMgmt = () => {
+            let html = `<h1>Assignments</h1><input id="at" class="hsc-input" placeholder="Title"> <input id="ap" class="hsc-input" type="number" placeholder="Points"> <input id="al" class="hsc-input" placeholder="Link"><button class="action-btn btn-save" onclick="addAssign()">Post</button><table>`;
+            hsc.db.assignments.forEach(a => html += `<tr><td>${a.title}</td><td>${a.points}</td></tr>`);
+            document.getElementById('content').innerHTML = html + `</table>`;
+        };
+
+        window.addAssign = () => {
+            hsc.publishAssignment(document.getElementById('at').value, document.getElementById('ap').value, document.getElementById('al').value);
+            drawAssignMgmt();
+        };
+
+        window.drawGradeMgmt = () => { /* Logic for Grade Table */ };
+        window.drawTracking = () => { /* Logic for Tracking Table */ };
+
+        drawUserMgmt();
+    </script>
+</body>
+</html>
