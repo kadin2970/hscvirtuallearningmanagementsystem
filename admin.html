@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HSC Master Terminal</title>
+    <style>
+        :root { --hsc-blue: #002147; --hsc-accent: #38bdf8; --hsc-glass: rgba(255,255,255,0.1); }
+        body { background: var(--hsc-blue); color: white; font-family: sans-serif; display: flex; margin: 0; height: 100vh; }
+        #sidebar { width: 260px; border-right: 1px solid var(--hsc-glass); padding: 20px; }
+        #content { flex: 1; padding: 40px; overflow-y: auto; }
+        .nav-btn { width: 100%; padding: 12px; margin-bottom: 10px; background: white; color: var(--hsc-blue); border: none; font-weight: bold; cursor: pointer; text-align: left; border-radius: 4px; }
+        .nav-btn:hover { background: var(--hsc-accent); }
+        input { background: var(--hsc-glass); border: 1px solid white; color: white; padding: 8px; margin: 5px; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid var(--hsc-glass); padding: 12px; text-align: left; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h3>HSC MASTER</h3>
+        <button class="nav-btn" onclick="drawUserMgmt()">User Management</button>
+        <button class="nav-btn" onclick="drawAssignMgmt()">Assignment Management</button>
+        <button class="nav-btn" onclick="drawGradeMgmt()">Grade Management</button>
+        <button class="nav-btn" onclick="drawTracking()">Turn In Tracking</button>
+        <button class="nav-btn" style="background:#ff4b4b;color:white" onclick="logout()">Sign Out</button>
+    </div>
+    <div id="content"></div>
+
+    <script type="module">
+        import { hsc } from './hsc-core.js';
+
+        // Gatekeeper
+        const session = JSON.parse(localStorage.getItem('HSC_CURRENT_USER'));
+        if (!session || session.role !== 'admin') window.location.href = 'index.html';
+
+        window.logout = () => { localStorage.removeItem('HSC_CURRENT_USER'); window.location.href='index.html'; };
+
+        // --- USER MANAGEMENT (With Edit) ---
+        window.drawUserMgmt = () => {
+            let html = `<h1>User Management</h1><table><tr><th>Name</th><th>User/Pass</th><th>Action</th></tr>`;
+            hsc.db.users.forEach(u => {
+                html += `<tr>
+                    <td><input id="n-${u.id}" value="${u.name}"></td>
+                    <td>
+                        U: <input id="u-${u.id}" value="${u.username}" style="width:80px">
+                        P: <input id="p-${u.id}" value="${u.password}" style="width:80px">
+                    </td>
+                    <td><button onclick="saveUser('${u.id}')">Save</button></td>
+                </tr>`;
+            });
+            document.getElementById('content').innerHTML = html + `</table>`;
+        };
+
+        window.saveUser = (id) => {
+            hsc.editUser(id, document.getElementById(`n-${id}`).value, document.getElementById(`u-${id}`).value, document.getElementById(`p-${id}`).value);
+            alert("User Updated.");
+        };
+
+        // --- ASSIGNMENT MANAGEMENT (With External Links) ---
+        window.drawAssignMgmt = () => {
+            let html = `<h1>Assignments</h1>
+            <input id="at" placeholder="Title"> <input id="ap" type="number" placeholder="Points"> <input id="al" placeholder="Link URL">
+            <button onclick="addAssign()">Add</button>
+            <table><tr><th>Title</th><th>Points</th><th>Link</th></tr>`;
+            hsc.db.assignments.forEach(a => {
+                html += `<tr><td>${a.title}</td><td>${a.points}</td><td><a href="${a.link}" target="_blank" style="color:var(--hsc-accent)">External Link</a></td></tr>`;
+            });
+            document.getElementById('content').innerHTML = html + `</table>`;
+        };
+
+        window.addAssign = () => {
+            hsc.publishAssignment(document.getElementById('at').value, document.getElementById('ap').value, document.getElementById('al').value);
+            drawAssignMgmt();
+        };
+
+        // --- GRADE MANAGEMENT (Detailed Points & Grade) ---
+        window.drawGradeMgmt = () => {
+            let html = `<h1>Grade Management</h1><table><tr><th>Student</th><th>Assignment Points</th><th>Final Grade</th><th>Action</th></tr>`;
+            hsc.db.users.filter(u => u.role === 'student').forEach(s => {
+                const breakdown = hsc.db.assignments.map(a => {
+                    const sub = hsc.db.submissions.find(sub => sub.studentId === s.id && sub.assignmentId === a.id);
+                    return `<div>${a.title}: ${sub ? sub.score : 0} / ${a.points}</div>`;
+                }).join('');
+
+                html += `<tr>
+                    <td><b>${s.name}</b></td>
+                    <td>${breakdown}</td>
+                    <td style="color:var(--hsc-accent)">${s.finalGrade}</td>
+                    <td><button onclick="drawGrader('${s.id}')">Assign Grades</button></td>
+                </tr>`;
+            });
+            document.getElementById('content').innerHTML = html + `</table>`;
+        };
+
+        window.drawGrader = (sId) => {
+            const student = hsc.db.users.find(u => u.id === sId);
+            let html = `<h2>Grading: ${student.name}</h2>`;
+            hsc.db.assignments.forEach(a => {
+                const sub = hsc.db.submissions.find(sub => sub.studentId === sId && sub.assignmentId === a.id);
+                html += `<div style="margin:10px 0;">${a.title} (Max: ${a.points}) <input type="number" id="sc-${a.id}" value="${sub ? sub.score : 0}"> 
+                <button onclick="submitGrade('${sId}', '${a.id}')">Update</button></div>`;
+            });
+            document.getElementById('content').innerHTML = html + `<button onclick="drawGradeMgmt()">Back</button>`;
+        };
+
+        window.submitGrade = (sId, aId) => {
+            hsc.gradeWork(sId, aId, document.getElementById(`sc-${aId}`).value);
+            alert("Grade Saved.");
+        };
+
+        window.drawTracking = () => { /* Submission log logic from previous step */ };
+        drawUserMgmt();
+    </script>
+</body>
+</html>
