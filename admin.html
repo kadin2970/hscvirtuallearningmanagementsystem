@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HSC Admin</title>
+    <style>
+        :root { --hsc-blue: #002147; --hsc-accent: #38bdf8; }
+        body { background: var(--hsc-blue); color: white; font-family: sans-serif; display: flex; margin: 0; height: 100vh; }
+        #sidebar { width: 260px; border-right: 1px solid rgba(255,255,255,0.1); padding: 20px; }
+        #content { flex: 1; padding: 40px; overflow-y: auto; }
+        .nav-btn { width: 100%; padding: 12px; margin-bottom: 10px; background: white; color: var(--hsc-blue); border: none; font-weight: bold; cursor: pointer; text-align: left; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid rgba(255,255,255,0.1); padding: 12px; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h3>HSC MASTER</h3>
+        <button class="nav-btn" onclick="drawUserMgmt()">User Management</button>
+        <button class="nav-btn" onclick="drawAssignMgmt()">Assignment Management</button>
+        <button class="nav-btn" onclick="drawGradeMgmt()">Grade Management</button>
+        <button class="nav-btn" onclick="drawTracking()">Turn In Tracking</button>
+        <button class="nav-btn" style="background:#ff4b4b;color:white" onclick="logout()">Sign Out</button>
+    </div>
+    <div id="content"></div>
+
+    <script type="module">
+        import { hsc } from './hsc-core.js';
+        
+        // Gatekeeper
+        const session = JSON.parse(localStorage.getItem('HSC_CURRENT_USER'));
+        if (!session || session.role !== 'admin') {
+            hsc.logViolation(session?.username || "Guest", "Admin Access Bypass Attempt");
+            window.location.href = 'index.html';
+        }
+
+        window.logout = () => { localStorage.removeItem('HSC_CURRENT_USER'); window.location.href='index.html'; };
+
+        window.drawUserMgmt = () => {
+            let html = `<h1>User Management</h1><table><tr><th>Name</th><th>Role</th><th>Action</th></tr>`;
+            hsc.db.users.forEach(u => html += `<tr><td>${u.name}</td><td>${u.role}</td><td><button onclick="hsc.deleteUser('${u.id}'); drawUserMgmt();">Delete</button></td></tr>`);
+            document.getElementById('content').innerHTML = html + `</table>`;
+        };
+
+        window.drawAssignMgmt = () => {
+            document.getElementById('content').innerHTML = `<h1>Assignments</h1>
+            <input id="at" placeholder="Title"> <input id="ap" type="number" placeholder="Points">
+            <button onclick="hsc.publishAssignment(document.getElementById('at').value, 'N/A', document.getElementById('ap').value); drawAssignMgmt();">Add</button>`;
+        };
+
+        window.drawGradeMgmt = () => { /* Logic to show students and a 'Grade' button per assignment */ };
+        
+        window.drawTracking = () => {
+            let html = `<h1>Turn In Tracking</h1><table><tr><th>Student</th><th>Task</th><th>Status</th></tr>`;
+            hsc.db.submissions.forEach(s => {
+                const stu = hsc.db.users.find(u => u.id === s.studentId);
+                const tsk = hsc.db.assignments.find(a => a.id === s.assignmentId);
+                html += `<tr><td>${stu?.name}</td><td>${tsk?.title}</td><td>${s.status} (${s.timestamp})</td></tr>`;
+            });
+            document.getElementById('content').innerHTML = html + `</table>`;
+        };
+    </script>
+</body>
+</html>

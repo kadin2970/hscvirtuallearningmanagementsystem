@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HSC Student</title>
+    <style>
+        :root { --hsc-blue: #002147; --hsc-accent: #38bdf8; }
+        body { background: var(--hsc-blue); color: white; font-family: sans-serif; padding: 40px; }
+        .card { background: rgba(255,255,255,0.05); padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        .btn { padding: 10px 20px; background: var(--hsc-accent); color: var(--hsc-blue); border: none; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Student Portal</h1>
+    <button onclick="location.reload()">Refresh Data</button>
+    <div id="feed"></div>
+
+    <script type="module">
+        import { hsc } from './hsc-core.js';
+        const session = JSON.parse(localStorage.getItem('HSC_CURRENT_USER'));
+        if (!session) window.location.href = 'index.html';
+
+        const feed = document.getElementById('feed');
+        hsc.db.assignments.forEach(a => {
+            const sub = hsc.db.submissions.find(s => s.studentId === session.id && s.assignmentId === a.id);
+            const status = sub ? sub.status : "Pending";
+            feed.innerHTML += `
+                <div class="card">
+                    <h3>${a.title}</h3>
+                    <p>Status: ${status}</p>
+                    <button class="btn" onclick="hsc.submitAssignment('${session.id}', '${a.id}'); location.reload();" ${status === "Turned In" ? 'disabled' : ''}>
+                        ${status === "Turned In" ? "Submitted" : "Turn In"}
+                    </button>
+                </div>`;
+        });
+    </script>
+</body>
+</html>
