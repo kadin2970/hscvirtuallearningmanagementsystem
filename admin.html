@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HSC Master Terminal</title>
+    <style>
+        :root { --blue: #003366; --light: #004a99; --white: #ffffff; --danger: #ff4444; --green: #2ecc71; }
+        body { background: var(--blue); color: var(--white); font-family: sans-serif; display: flex; margin: 0; height: 100vh; }
+        #sidebar { width: 250px; background: var(--light); padding: 20px; border-right: 1px solid rgba(255,255,255,0.1); }
+        .nav-btn { width: 100%; padding: 12px; margin-bottom: 8px; background: transparent; color: white; border: 1px solid white; cursor: pointer; border-radius: 4px; text-align: left; font-weight: bold; }
+        #content { flex: 1; padding: 40px; overflow-y: auto; }
+        .hsc-input { background: rgba(255,255,255,0.1); border: 1px solid white; color: white; padding: 8px; margin: 5px; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .action-btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; background: var(--green); color: white; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>HSC MASTER</h2>
+        <button class="nav-btn" onclick="drawAssignMgmt()">Assignments</button>
+        <button class="nav-btn" onclick="drawGradeMgmt()">Grading</button>
+        <button class="nav-btn" onclick="drawAudit()">Security & Audit</button>
+        <button class="nav-btn" style="margin-top:20px; background:var(--danger); border:none;" onclick="logout()">Sign Out</button>
+    </div>
+    <div id="content"></div>
+
+    <script type="module">
+        import { hsc } from './hsc-core.js';
+        const session = JSON.parse(localStorage.getItem('HSC_CURRENT_USER'));
+        if (!session || session.role !== 'admin') window.location.href = 'index.html';
+
+        window.logout = () => { localStorage.removeItem('HSC_CURRENT_USER'); window.location.href='index.html'; };
+
+        // Helper to fix the "undefined" date error
+        const formatDate = (date) => (date && date !== "No Date") ? date : "";
+
+        window.drawAssignMgmt = () => {
+            let html = `<h1>Assignments</h1><div>
+            <input id="at" class="hsc-input" placeholder="Title"><input id="ap" class="hsc-input" type="number" placeholder="Pts">
+            <input id="ad" class="hsc-input" type="date"><button class="action-btn" onclick="addAsgn()">Post</button></div>
+            <table><tr><th>Title</th><th>Pts</th><th>Due</th><th>Action</th></tr>`;
+            hsc.db.assignments.forEach(a => {
+                html += `<tr>
+                    <td><input id="t-${a.id}" class="hsc-input" value="${a.title}"></td>
+                    <td><input id="p-${a.id}" class="hsc-input" type="number" value="${a.points}"></td>
+                    <td><input id="d-${a.id}" class="hsc-input" type="date" value="${formatDate(a.dueDate)}"></td>
+                    <td><button class="action-btn" onclick="saveEdit('${a.id}')">Save</button></td>
+                </tr>`;
+            });
+            document.getElementById('content').innerHTML = html + `</table>`;
+        };
+
+        window.addAsgn = () => { hsc.publishAssignment(document.getElementById('at').value, document.getElementById('ap').value, "", document.getElementById('ad').value); drawAssignMgmt(); };
+        window.saveEdit = (id) => { hsc.editAssignment(id, document.getElementById(`t-${id}`).value, document.getElementById(`p-${id}`).value, "", document.getElementById(`d-${id}`).value); drawAssignMgmt(); };
+
+        window.drawGradeMgmt = () => {
+            let html = `<h1>Grading</h1><table><tr><th>Student</th><th>GPA</th><th>Action</th></tr>`;
+            hsc.db.users.filter(u => u.role === 'student').forEach(s => {
+                html += `<tr><td>${s.name}</td><td>${s.finalGrade || 'N/A'}</td><td><button class="action-btn" onclick="drawGrader('${s.id}')">View</button></td></tr>`;
+            });
+            document.getElementById('content').innerHTML = html + `</table>`;
+        };
+
+        window.drawGrader = (id) => {
+            const student = hsc.db.users.find(u => u.id === id);
+            let html = `<h2>Grading: ${student.name}</h2>`;
+            hsc.db.assignments.forEach(a => {
+                const sub = hsc.db.submissions.find(s => s.studentId === id && s.assignmentId === a.id);
+                html += `<div style="padding:10px; border:1px solid white; margin-bottom:5px;">
+                    ${a.title} | <input id="g-${a.id}" class="hsc-input" type="number" value="${sub ? sub.score : 0}">
+                    <button class="action-btn" onclick="hsc.gradeWork('${id}','${a.id}',document.getElementById('g-${a.id}').value); drawGrader('${id}')">Set</button>
+                </div>`;
+            });
+            document.getElementById('content').innerHTML = html + `<button class="nav-btn" onclick="drawGradeMgmt()">Back</button>`;
+        };
+
+        window.drawAudit = () => {
+            const today = new Date().toISOString().split('T')[0];
+            let html = `<h1>Audit</h1><h3>Overdue</h3><table>`;
+            hsc.db.users.filter(u => u.role === 'student').forEach(stu => {
+                hsc.db.assignments.forEach(task => {
+                    const sub = hsc.db.submissions.find(s => s.studentId === stu.id && s.assignmentId === task.id);
+                    if (task.dueDate && task.dueDate !== "No Date" && task.dueDate < today && (!sub || sub.status !== "Graded")) {
+                        html += `<tr style="color:var(--danger)"><td>${stu.name}</td><td>${task.title}</td></tr>`;
+                    }
+                });
+            });
+            html += `</table><h3>Security Logs</h3><table>`;
+            hsc.db.accessLogs.slice().reverse().forEach(log => html += `<tr><td>${log.timestamp}</td><td>${log.username}</td><td>${log.incident}</td></tr>`);
+            document.getElementById('content').innerHTML = html + `</table>`;
+        };
+
+        drawAssignMgmt();
+    </script>
+</body>
+</html>
