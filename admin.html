@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HSC Admin Terminal</title>
+    <style>
+        :root { --hsc-blue: #002147; --hsc-accent: #38bdf8; }
+        body { background: var(--hsc-blue); color: white; font-family: sans-serif; display: flex; margin: 0; height: 100vh; }
+        #sidebar { width: 250px; border-right: 1px solid rgba(255,255,255,0.1); padding: 20px; }
+        #content { flex: 1; padding: 40px; overflow-y: auto; }
+        .hsc-btn { width: 100%; padding: 10px; margin-bottom: 10px; cursor: pointer; border-radius: 4px; border: none; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid rgba(255,255,255,0.1); padding: 10px; text-align: left; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>HSC ADMIN</h2>
+        <button class="hsc-btn" onclick="drawDashboard()">Dashboard</button>
+        <button class="hsc-btn" onclick="drawSecurityLogs()">Security Audit</button>
+        <button class="hsc-btn" style="background:#ff4b4b; color:white;" onclick="logout()">Sign Out</button>
+    </div>
+    <div id="content"></div>
+
+    <script type="module">
+        import { hsc } from './hsc-core.js';
+
+        // --- THE GATEKEEPER INTEGRATION ---
+        const session = JSON.parse(localStorage.getItem('HSC_CURRENT_USER'));
+        if (!session || session.role !== 'admin') {
+            const offender = session ? session.username : "Anonymous";
+            hsc.logViolation(offender, "Unauthorized Admin Terminal Access Attempt");
+            alert("SECURITY ALERT: Unauthorized access logged.");
+            window.location.href = 'index.html';
+        }
+
+        // --- ADMIN FUNCTIONS ---
+        window.drawSecurityLogs = () => {
+            let html = `<h1>Security Audit Trail</h1><table><tr><th>Time</th><th>User</th><th>Incident</th></tr>`;
+            hsc.db.accessLogs.slice().reverse().forEach(log => {
+                html += `<tr><td>${log.timestamp}</td><td>${log.username}</td><td>${log.incident}</td></tr>`;
+            });
+            document.getElementById('content').innerHTML = html + `</table>`;
+        };
+
+        window.logout = () => {
+            localStorage.removeItem('HSC_CURRENT_USER');
+            window.location.href = 'index.html';
+        };
+
+        window.drawDashboard = () => {
+             document.getElementById('content').innerHTML = `<h1>Welcome, Administrator</h1><p>System status: Nominal.</p>`;
+        };
+
+        drawDashboard();
+    </script>
+</body>
+</html>
